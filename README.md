@@ -2,6 +2,8 @@
 
 A restaurant menu browsing and cart-ordering app built as a portfolio demo.
 
+🔗 **Live Demo:** [https://quick-bite-iota-three.vercel.app/](https://quick-bite-iota-three.vercel.app/)
+
 ## What it is
 
 QuickBite lets you browse dishes by category, search by name, view full item details, and manage a shopping cart — all powered by the free [TheMealDB API](https://www.themealdb.com/api.php). No real payment is processed; clicking "Place Order" clears the cart and shows a confirmation screen.
@@ -32,8 +34,8 @@ QuickBite lets you browse dishes by category, search by name, view full item det
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/YOUR_USERNAME/quickbite.git
-cd quickbite
+git clone https://github.com/SaadKhalid-PTUT036/quick-bite.git
+cd quick-bite
 
 # 2. Install dependencies
 npm install
