@@ -1,22 +1,50 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { Category, MenuItem } from '../types';
-import { fetchCategories, fetchMealsByCategory, searchMeals } from '../lib/api';
+import { fetchCategories, fetchMealsByCategory, fetchMealsByIds, searchMeals } from '../lib/api';
+import { useFavorites } from '../lib/favorites';
 import { CategoryFilter } from '../components/CategoryFilter';
 import { MenuItemCard } from '../components/MenuItemCard';
 import { MenuItemSkeleton } from '../components/Skeleton';
 
+const DEFAULT_CATEGORY = 'Seafood';
+
 export function MenuPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const favorites = useFavorites();
+
+  // URL is the source of truth for filters -> shareable & back-button friendly
+  const selectedCategory = searchParams.get('cat') ?? DEFAULT_CATEGORY;
+  const query = searchParams.get('q') ?? '';
+  const favOnly = searchParams.get('fav') === '1';
+
+  // Local input value; debounced into the URL `q` param below
+  const [search, setSearch] = useState(query);
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [catLoading, setCatLoading] = useState(true);
 
-  const [selectedCategory, setSelectedCategory] = useState('Seafood');
   const [items, setItems] = useState<MenuItem[]>([]);
-  const [itemsLoading, setItemsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
 
-  const [search, setSearch] = useState('');
-  const [results, setResults] = useState<MenuItem[]>([]);
-  const [searching, setSearching] = useState(false);
+  const isSearch = query.trim().length >= 2;
+  const isFavMode = favOnly && !isSearch;
+
+  // Push the typed search into the URL after a short debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        const trimmed = search.trim();
+        if (trimmed) next.set('q', trimmed);
+        else next.delete('q');
+        return next;
+      }, { replace: true });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [search, setSearchParams]);
 
   // Load categories once
   useEffect(() => {
@@ -24,60 +52,73 @@ export function MenuPage() {
       .then((cats) => {
         setCategories(cats);
         setCatLoading(false);
+        // If we land on a default category, reflect it in the URL
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          if (!next.get('cat')) next.set('cat', DEFAULT_CATEGORY);
+          return next;
+        }, { replace: true });
       })
       .catch(() => setCatLoading(false));
-  }, []);
+  }, [setSearchParams]);
 
-  // Load items whenever category changes (skipped while a search is active)
+  // Load dishes whenever the active "mode" changes
   useEffect(() => {
-    if (search.trim()) return;
-    setItemsLoading(true);
+    let cancelled = false;
+    setLoading(true);
     setError(null);
-    fetchMealsByCategory(selectedCategory)
-      .then((meals) => {
-        setItems(meals);
-        setItemsLoading(false);
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : 'Something went wrong');
-        setItemsLoading(false);
-      });
-  }, [selectedCategory, search]);
 
-  // Debounced global search across all dishes (TheMealDB search endpoint)
-  useEffect(() => {
-    const q = search.trim();
-    if (q.length < 2) {
-      setResults([]);
-      setSearching(false);
-      return;
-    }
-    setSearching(true);
-    setError(null);
-    const timer = setTimeout(() => {
-      searchMeals(q)
-        .then(setResults)
-        .catch((err: unknown) => {
-          setError(err instanceof Error ? err.message : 'Search failed');
-          setResults([]);
-        })
-        .finally(() => setSearching(false));
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [search]);
+    const load = async () => {
+      try {
+        let data: MenuItem[];
+        if (isSearch) {
+          data = await searchMeals(query.trim());
+        } else if (isFavMode) {
+          data = await fetchMealsByIds([...favorites]);
+        } else {
+          data = await fetchMealsByCategory(selectedCategory);
+        }
+        if (!cancelled) setItems(data);
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Something went wrong');
+          setItems([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
 
-  const isSearch = search.trim().length >= 2;
-  const visibleItems = isSearch ? results : items;
-  const loading = isSearch ? searching : itemsLoading;
+    return () => { cancelled = true; };
+    // favorites intentionally omitted: only read when entering fav mode
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCategory, query, favOnly, isSearch, isFavMode, retryKey]);
+
+  const selectCategory = (cat: string) => {
+    setSearch('');
+    setSearchParams({ cat });
+  };
+
+  const toggleFavMode = () => {
+    setSearch('');
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('q');
+      if (favOnly) next.delete('fav');
+      else next.set('fav', '1');
+      return next;
+    });
+  };
 
   return (
     <main className="max-w-6xl mx-auto px-4 py-8">
       {/* Hero */}
       <div className="mb-8 text-center">
-        <h1 className="text-4xl font-extrabold text-gray-900 mb-2">
+        <h1 className="text-4xl font-extrabold text-gray-900 dark:text-white mb-2">
           What are you craving?
         </h1>
-        <p className="text-gray-500 text-lg">
+        <p className="text-gray-500 dark:text-gray-400 text-lg">
           Fresh ingredients, bold flavours — delivered fast.
         </p>
       </div>
@@ -97,22 +138,42 @@ export function MenuPage() {
         </svg>
         <input
           type="search"
-          placeholder="Search dishes…"
+          placeholder="Search all dishes…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-12 pr-4 py-3 rounded-2xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-400 text-sm bg-white shadow-sm"
+          className="w-full pl-12 pr-4 py-3 rounded-2xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-400 text-sm bg-white dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100 shadow-sm"
           aria-label="Search dishes"
         />
       </div>
 
-      {/* Category filter */}
-      <div className="mb-8">
-        <CategoryFilter
-          categories={categories}
-          selected={selectedCategory}
-          onSelect={(cat) => { setSelectedCategory(cat); setSearch(''); }}
-          loading={catLoading}
-        />
+      {/* Category filter + favorites toggle */}
+      <div className="mb-8 flex items-start gap-2">
+        <button
+          onClick={toggleFavMode}
+          aria-pressed={favOnly}
+          className={`flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap border transition-colors ${
+            favOnly
+              ? 'bg-red-500 text-white border-red-500'
+              : 'bg-white text-gray-600 border-gray-200 hover:border-red-400 hover:text-red-500 dark:bg-gray-900 dark:text-gray-300 dark:border-gray-700'
+          }`}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill={favOnly ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={2} aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+          </svg>
+          Favorites
+          {favorites.size > 0 && (
+            <span className={`text-xs font-bold ${favOnly ? 'text-white' : 'text-red-500'}`}>{favorites.size}</span>
+          )}
+        </button>
+
+        <div className="flex-1 min-w-0">
+          <CategoryFilter
+            categories={categories}
+            selected={selectedCategory}
+            onSelect={selectCategory}
+            loading={catLoading}
+          />
+        </div>
       </div>
 
       {/* Grid */}
@@ -120,7 +181,7 @@ export function MenuPage() {
         <div className="text-center py-16">
           <p className="text-red-500 font-medium">{error}</p>
           <button
-            onClick={() => setSelectedCategory(selectedCategory)}
+            onClick={() => setRetryKey((k) => k + 1)}
             className="mt-4 text-sm text-brand-600 underline"
           >
             Try again
@@ -130,31 +191,39 @@ export function MenuPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {Array.from({ length: 8 }).map((_, i) => <MenuItemSkeleton key={i} />)}
         </div>
-      ) : visibleItems.length === 0 ? (
+      ) : items.length === 0 ? (
         <div className="text-center py-20">
-          <p className="text-5xl mb-4">🍽️</p>
-          <p className="text-gray-500 text-lg font-medium">
-            {isSearch ? `No results for "${search.trim()}"` : 'No dishes found'}
+          <p className="text-5xl mb-4">{isFavMode ? '❤️' : '🍽️'}</p>
+          <p className="text-gray-500 dark:text-gray-400 text-lg font-medium">
+            {isSearch
+              ? `No results for “${query.trim()}”`
+              : isFavMode
+                ? 'No favorites yet — tap the heart on a dish to save it'
+                : 'No dishes found'}
           </p>
-          {search && (
+          {(search || favOnly) && (
             <button
-              onClick={() => setSearch('')}
+              onClick={() => { setSearch(''); setSearchParams({ cat: selectedCategory }); }}
               className="mt-3 text-sm text-brand-600 underline"
             >
-              Clear search
+              Clear filters
             </button>
           )}
         </div>
       ) : (
         <>
-          {isSearch && (
-            <p className="mb-4 text-sm text-gray-500">
-              {visibleItems.length} result{visibleItems.length === 1 ? '' : 's'} for
-              “<span className="font-semibold text-gray-700">{search.trim()}</span>” across all categories
-            </p>
-          )}
+          <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+            {isSearch ? (
+              <>
+                {items.length} result{items.length === 1 ? '' : 's'} for “
+                <span className="font-semibold text-gray-700 dark:text-gray-200">{query.trim()}</span>” across all categories
+              </>
+            ) : isFavMode ? (
+              <>Showing your favorites</>
+            ) : null}
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {visibleItems.map((item) => (
+            {items.map((item) => (
               <MenuItemCard key={item.id} item={item} />
             ))}
           </div>

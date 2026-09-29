@@ -4,6 +4,7 @@ import type { MenuItem } from '../types';
 import { fetchMealById } from '../lib/api';
 import { Skeleton } from '../components/Skeleton';
 import { useCart } from '../hooks/useCart';
+import { useFavorites, toggleFavorite } from '../lib/favorites';
 
 export function ItemDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -11,8 +12,10 @@ export function ItemDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { add, items } = useCart();
+  const favorites = useFavorites();
 
   const inCart = item ? items.find((i) => i.id === item.id) : undefined;
+  const isFav = item ? favorites.has(item.id) : false;
 
   useEffect(() => {
     if (!id) return;
@@ -45,7 +48,7 @@ export function ItemDetailPage() {
     return (
       <main className="max-w-lg mx-auto px-4 py-20 text-center">
         <p className="text-5xl mb-4">🍽️</p>
-        <p className="text-gray-500 text-lg mb-6">{error ?? 'Item not found'}</p>
+        <p className="text-gray-500 dark:text-gray-400 text-lg mb-6">{error ?? 'Item not found'}</p>
         <Link to="/" className="text-brand-600 underline text-sm">Back to menu</Link>
       </main>
     );
@@ -56,7 +59,7 @@ export function ItemDetailPage() {
       {/* Back */}
       <Link
         to="/"
-        className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-brand-600 transition-colors mb-6"
+        className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-brand-600 dark:text-gray-400 transition-colors mb-6"
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -64,7 +67,7 @@ export function ItemDetailPage() {
         Back to menu
       </Link>
 
-      <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100">
+      <div className="bg-white dark:bg-gray-900 rounded-3xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800">
         <img
           src={item.image}
           alt={item.name}
@@ -74,16 +77,16 @@ export function ItemDetailPage() {
         <div className="p-6 md:p-8">
           <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
             <div>
-              <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 mb-1">
+              <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 dark:text-white mb-1">
                 {item.name}
               </h1>
-              <span className="inline-block bg-brand-50 text-brand-700 text-xs font-semibold px-3 py-1 rounded-full">
+              <span className="inline-block bg-brand-50 dark:bg-brand-700/20 text-brand-700 dark:text-brand-400 text-xs font-semibold px-3 py-1 rounded-full">
                 {item.category}
               </span>
               {item.tags && (
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {item.tags.split(',').filter(Boolean).map((tag) => (
-                    <span key={tag} className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                    <span key={tag} className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
                       {tag.trim()}
                     </span>
                   ))}
@@ -95,20 +98,36 @@ export function ItemDetailPage() {
             </div>
           </div>
 
-          {/* Add to cart */}
-          <button
-            onClick={() => add(item)}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white font-bold px-8 py-3.5 rounded-2xl transition-colors text-base mb-8"
-            aria-label={`Add ${item.name} to cart`}
-          >
-            {inCart ? '✓ Add another' : '+ Add to cart'}
-          </button>
+          {/* Add to cart + favorite */}
+          <div className="flex items-center gap-3 mb-8">
+            <button
+              onClick={() => add(item)}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white font-bold px-8 py-3.5 rounded-2xl transition-colors text-base"
+              aria-label={`Add ${item.name} to cart`}
+            >
+              {inCart ? '✓ Add another' : '+ Add to cart'}
+            </button>
+            <button
+              onClick={() => toggleFavorite(item.id)}
+              aria-pressed={isFav}
+              aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
+              className={`p-3.5 rounded-2xl border transition-colors ${
+                isFav
+                  ? 'bg-red-50 border-red-200 text-red-500 dark:bg-red-500/10 dark:border-red-500/30'
+                  : 'bg-white border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-300 dark:bg-gray-900 dark:border-gray-700'
+              }`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill={isFav ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+              </svg>
+            </button>
+          </div>
 
           {/* Instructions */}
           {item.instructions && (
             <div>
-              <h2 className="text-lg font-bold text-gray-800 mb-3">About this dish</h2>
-              <p className="text-gray-600 leading-relaxed text-sm whitespace-pre-line line-clamp-[12]">
+              <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-3">About this dish</h2>
+              <p className="text-gray-600 dark:text-gray-300 leading-relaxed text-sm whitespace-pre-line line-clamp-[12]">
                 {item.instructions}
               </p>
             </div>

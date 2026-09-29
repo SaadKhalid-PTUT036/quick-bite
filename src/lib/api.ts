@@ -67,6 +67,11 @@ export async function fetchMealById(id: string): Promise<MenuItem | null> {
   return mapMeal(meals[0]);
 }
 
+export async function fetchMealsByIds(ids: string[]): Promise<MenuItem[]> {
+  const results = await Promise.all(ids.map((id) => fetchMealById(id).catch(() => null)));
+  return results.filter((m): m is MenuItem => m !== null);
+}
+
 export async function searchMeals(query: string): Promise<MenuItem[]> {
   const res = await fetch(`${BASE}/search.php?s=${encodeURIComponent(query)}`);
   if (!res.ok) throw new Error('Search failed');

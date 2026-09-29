@@ -30,7 +30,7 @@ export function CategoryFilter({ categories, selected, onSelect, loading }: Prop
               className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap border ${
                 selected === cat.strCategory
                   ? 'bg-brand-500 text-white border-brand-500'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-brand-400 hover:text-brand-600'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-brand-400 hover:text-brand-600 dark:bg-gray-900 dark:text-gray-300 dark:border-gray-700'
               }`}
             >
               <img
