@@ -1,19 +1,65 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../hooks/useCart';
+import type { CartItem } from '../types';
+
+interface DeliveryDetails {
+  name: string;
+  phone: string;
+  address: string;
+  notes: string;
+}
+
+const EMPTY_DELIVERY: DeliveryDetails = { name: '', phone: '', address: '', notes: '' };
+
+function validate(details: DeliveryDetails) {
+  const errors: Partial<Record<keyof DeliveryDetails, string>> = {};
+  if (details.name.trim().length < 2) errors.name = 'Please enter your full name';
+  if (!/^[0-9+\-()\s]{7,15}$/.test(details.phone.trim()))
+    errors.phone = 'Enter a valid phone number (7–15 digits)';
+  if (details.address.trim().length < 8) errors.address = 'Please enter a detailed delivery address';
+  return errors;
+}
 
 export function CartPage() {
   const { items, remove, increment, decrement, clear, totalPrice } = useCart();
-  const [confirmed, setConfirmed] = useState(false);
+  const [step, setStep] = useState<'cart' | 'checkout' | 'confirmed'>('cart');
+  const [details, setDetails] = useState<DeliveryDetails>(EMPTY_DELIVERY);
+  const [errors, setErrors] = useState<Partial<Record<keyof DeliveryDetails, string>>>({});
+  // Snapshot of the order so the confirmation screen can show it after the cart is cleared
+  const [order, setOrder] = useState<{ items: CartItem[]; total: number } | null>(null);
 
-  if (confirmed) {
+  if (step === 'confirmed' && order) {
     return (
       <main className="max-w-lg mx-auto px-4 py-20 text-center">
         <div className="text-7xl mb-6">🎉</div>
         <h1 className="text-3xl font-extrabold text-gray-900 mb-3">Order Placed!</h1>
-        <p className="text-gray-500 mb-8">
-          Thanks for your order. Your food is being prepared and will arrive shortly.
+        <p className="text-gray-500 mb-2">
+          Thanks{details.name ? `, ${details.name.split(' ')[0]}` : ''}! Your food is being prepared and will
+          arrive shortly.
         </p>
+        <p className="text-sm text-gray-400 mb-8">
+          Delivering to: {details.address.trim()}
+        </p>
+
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 text-left mb-8">
+          <h2 className="font-semibold text-gray-800 mb-3">Order summary</h2>
+          <ul className="space-y-2 text-sm text-gray-600">
+            {order.items.map((i) => (
+              <li key={i.id} className="flex justify-between">
+                <span>
+                  {i.quantity} × {i.name}
+                </span>
+                <span>${(i.price * i.quantity).toFixed(2)}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="border-t border-gray-100 mt-3 pt-3 flex justify-between font-bold text-gray-900">
+            <span>Total</span>
+            <span>${order.total.toFixed(2)}</span>
+          </div>
+        </div>
+
         <Link
           to="/"
           className="inline-block bg-brand-500 hover:bg-brand-600 text-white font-semibold px-8 py-3 rounded-2xl transition-colors"
@@ -36,6 +82,110 @@ export function CartPage() {
         >
           Browse Menu
         </Link>
+      </main>
+    );
+  }
+
+  if (step === 'checkout') {
+    const handleChange = (field: keyof DeliveryDetails) => (value: string) => {
+      setDetails((d) => ({ ...d, [field]: value }));
+      setErrors((e) => ({ ...e, [field]: undefined }));
+    };
+
+    const handleSubmit = (e: FormEvent) => {
+      e.preventDefault();
+      const errs = validate(details);
+      setErrors(errs);
+      if (Object.keys(errs).length > 0) return;
+      setOrder({ items, total: totalPrice });
+      clear();
+      setStep('confirmed');
+    };
+
+    const inputClass = (field: keyof DeliveryDetails) =>
+      `w-full px-4 py-3 rounded-2xl border bg-white text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-400 ${
+        errors[field] ? 'border-red-400' : 'border-gray-200'
+      }`;
+
+    return (
+      <main className="max-w-lg mx-auto px-4 py-8">
+        <button
+          onClick={() => setStep('cart')}
+          className="text-sm text-gray-500 hover:text-brand-600 transition-colors mb-4 flex items-center gap-1"
+        >
+          ← Back to cart
+        </button>
+        <h1 className="text-3xl font-extrabold text-gray-900 mb-2">Checkout</h1>
+        <p className="text-gray-500 mb-8">Where should we deliver your order?</p>
+
+        <form onSubmit={handleSubmit} noValidate className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 space-y-5">
+          <div>
+            <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Full name</label>
+            <input
+              id="name"
+              type="text"
+              value={details.name}
+              onChange={(e) => handleChange('name')(e.target.value)}
+              placeholder="Jon Doe"
+              autoComplete="name"
+              className={inputClass('name')}
+            />
+            {errors.name && <p className="mt-1 text-sm text-red-500">{errors.name}</p>}
+          </div>
+
+          <div>
+            <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">Phone number</label>
+            <input
+              id="phone"
+              type="tel"
+              value={details.phone}
+              onChange={(e) => handleChange('phone')(e.target.value)}
+              placeholder="+1 234 567 890"
+              autoComplete="tel"
+              className={inputClass('phone')}
+            />
+            {errors.phone && <p className="mt-1 text-sm text-red-500">{errors.phone}</p>}
+          </div>
+
+          <div>
+            <label htmlFor="address" className="block text-sm font-medium text-gray-700 mb-1">Delivery address</label>
+            <textarea
+              id="address"
+              value={details.address}
+              onChange={(e) => handleChange('address')(e.target.value)}
+              placeholder="Street, building, apartment, city…"
+              rows={3}
+              className={`${inputClass('address')} resize-none`}
+            />
+            {errors.address && <p className="mt-1 text-sm text-red-500">{errors.address}</p>}
+          </div>
+
+          <div>
+            <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-1">
+              Delivery notes <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              id="notes"
+              type="text"
+              value={details.notes}
+              onChange={(e) => handleChange('notes')(e.target.value)}
+              placeholder="e.g. Leave at the door"
+              className={inputClass('notes')}
+            />
+          </div>
+
+          <div className="border-t border-gray-100 pt-4 flex justify-between font-bold text-lg text-gray-900">
+            <span>Total</span>
+            <span>${totalPrice.toFixed(2)}</span>
+          </div>
+
+          <button
+            type="submit"
+            className="w-full bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white font-bold py-4 rounded-2xl transition-colors text-lg"
+          >
+            Place Order
+          </button>
+        </form>
       </main>
     );
   }
@@ -117,10 +267,10 @@ export function CartPage() {
         </div>
 
         <button
-          onClick={() => { clear(); setConfirmed(true); }}
+          onClick={() => setStep('checkout')}
           className="w-full bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white font-bold py-4 rounded-2xl transition-colors text-lg"
         >
-          Place Order
+          Proceed to Checkout
         </button>
       </div>
     </main>

@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import type { Category, MenuItem } from '../types';
-import { fetchCategories, fetchMealsByCategory } from '../lib/api';
+import { fetchCategories, fetchMealsByCategory, searchMeals } from '../lib/api';
 import { CategoryFilter } from '../components/CategoryFilter';
 import { MenuItemCard } from '../components/MenuItemCard';
 import { MenuItemSkeleton } from '../components/Skeleton';
@@ -15,6 +15,8 @@ export function MenuPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState('');
+  const [results, setResults] = useState<MenuItem[]>([]);
+  const [searching, setSearching] = useState(false);
 
   // Load categories once
   useEffect(() => {
@@ -26,8 +28,9 @@ export function MenuPage() {
       .catch(() => setCatLoading(false));
   }, []);
 
-  // Load items whenever category changes
+  // Load items whenever category changes (skipped while a search is active)
   useEffect(() => {
+    if (search.trim()) return;
     setItemsLoading(true);
     setError(null);
     fetchMealsByCategory(selectedCategory)
@@ -39,13 +42,33 @@ export function MenuPage() {
         setError(err instanceof Error ? err.message : 'Something went wrong');
         setItemsLoading(false);
       });
-  }, [selectedCategory]);
+  }, [selectedCategory, search]);
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return items;
-    const q = search.toLowerCase();
-    return items.filter((m) => m.name.toLowerCase().includes(q));
-  }, [items, search]);
+  // Debounced global search across all dishes (TheMealDB search endpoint)
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 2) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    setError(null);
+    const timer = setTimeout(() => {
+      searchMeals(q)
+        .then(setResults)
+        .catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : 'Search failed');
+          setResults([]);
+        })
+        .finally(() => setSearching(false));
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const isSearch = search.trim().length >= 2;
+  const visibleItems = isSearch ? results : items;
+  const loading = isSearch ? searching : itemsLoading;
 
   return (
     <main className="max-w-6xl mx-auto px-4 py-8">
@@ -103,15 +126,15 @@ export function MenuPage() {
             Try again
           </button>
         </div>
-      ) : itemsLoading ? (
+      ) : loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {Array.from({ length: 8 }).map((_, i) => <MenuItemSkeleton key={i} />)}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : visibleItems.length === 0 ? (
         <div className="text-center py-20">
           <p className="text-5xl mb-4">🍽️</p>
           <p className="text-gray-500 text-lg font-medium">
-            {search ? `No results for "${search}"` : 'No dishes found'}
+            {isSearch ? `No results for "${search.trim()}"` : 'No dishes found'}
           </p>
           {search && (
             <button
@@ -123,11 +146,19 @@ export function MenuPage() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {filtered.map((item) => (
-            <MenuItemCard key={item.id} item={item} />
-          ))}
-        </div>
+        <>
+          {isSearch && (
+            <p className="mb-4 text-sm text-gray-500">
+              {visibleItems.length} result{visibleItems.length === 1 ? '' : 's'} for
+              “<span className="font-semibold text-gray-700">{search.trim()}</span>” across all categories
+            </p>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {visibleItems.map((item) => (
+              <MenuItemCard key={item.id} item={item} />
+            ))}
+          </div>
+        </>
       )}
     </main>
   );
